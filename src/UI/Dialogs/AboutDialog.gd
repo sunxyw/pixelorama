@@ -313,7 +313,7 @@ func _notification(what: int) -> void:
 
 
 func _on_about_to_popup() -> void:
-	title = tr("About Pixelorama") + " " + Global.current_version
+	title = tr("About %s") % Global.custom_app_name + " " + Global.current_version
 
 	var groups_root := groups.create_item()
 	#var developers_button := groups.create_item(groups_root)

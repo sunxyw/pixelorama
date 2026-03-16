@@ -246,7 +246,7 @@ func change_project() -> void:
 	for brush in brushes:
 		Brushes.add_project_brush(brush)
 	Global.transparent_checker.update_rect()
-	Global.get_window().title = "%s - Pixelorama %s" % [name, Global.current_version]
+	Global.get_window().title = "%s - %s %s" % [name, Global.custom_app_name, Global.current_version]
 	if has_changed:
 		Global.get_window().title = Global.get_window().title + "(*)"
 	selection_map_changed()

@@ -382,7 +382,9 @@ func open_pxo_file(path: String, is_backup := false, replace_empty := true) -> v
 	else:
 		# Loading a backup should not change window title and save path
 		new_project.save_path = path
-		get_window().title = new_project.name + " - Pixelorama " + Global.current_version
+		get_window().title = (
+			new_project.name + " - " + Global.custom_app_name + " " + Global.current_version
+		)
 		# Set last opened project path and save
 		Global.config_cache.set_value("data", "current_dir", path.get_base_dir())
 		Global.config_cache.set_value("data", "last_project_path", path)
@@ -587,7 +589,15 @@ func save_pxo_file(
 		var file := FileAccess.open(path, FileAccess.READ)
 		if FileAccess.get_open_error() == OK:
 			var file_data := file.get_buffer(file.get_length())
-			JavaScriptBridge.download_buffer(file_data, path.get_file())
+			var save_api_url := Html5FileExchange.get_url_param("save_api_url")
+			if not save_api_url.is_empty():
+				var ok := await Html5FileExchange.save_to_api(
+					save_api_url, file_data, path.get_file(), "application/x-pixelorama"
+				)
+				if not ok:
+					Global.popup_error(tr("Project failed to save to API: %s") % save_api_url)
+			else:
+				JavaScriptBridge.download_buffer(file_data, path.get_file())
 		file.close()
 		# Remove the .pxo file from memory, as we don't need it anymore
 		DirAccess.remove_absolute(path)
@@ -599,7 +609,7 @@ func save_pxo_file(
 		if project.has_changed:
 			project.has_changed = false
 		Global.notification_label("File saved")
-		get_window().title = project.name + " - Pixelorama " + Global.current_version
+		get_window().title = project.name + " - " + Global.custom_app_name + " " + Global.current_version
 
 		# Set last opened project path and save
 		Global.config_cache.set_value("data", "current_dir", path.get_base_dir())
@@ -1039,7 +1049,7 @@ func set_new_imported_tab(project: Project, path: String) -> void:
 
 	var file_name := path.uri_decode().get_file()
 	get_window().title = (
-		file_name + " (" + tr("imported") + ") - Pixelorama " + Global.current_version
+		file_name + " (" + tr("imported") + ") - " + Global.custom_app_name + " " + Global.current_version
 	)
 	if project.has_changed:
 		get_window().title = get_window().title + "(*)"

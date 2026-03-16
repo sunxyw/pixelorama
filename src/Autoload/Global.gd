@@ -658,6 +658,10 @@ var onion_skinning_blue_red := false  ## If [code]true[/code], then blue-red mod
 
 ## The current version of pixelorama
 var current_version: String = ProjectSettings.get_setting("application/config/version")
+## The application name shown in the window title and dialogs.
+## Can be overridden from the website via the [code]app_name[/code] URL query parameter,
+## allowing custom branding when Pixelorama is embedded in a third-party website.
+var custom_app_name := "Pixelorama"
 
 # Nodes
 ## The [PackedScene] of the button used by layers in the timeline.
@@ -841,6 +845,10 @@ func _ready() -> void:
 				set(pref, value)
 	if OS.is_sandboxed() or OS.has_feature("mobile"):
 		Global.use_native_file_dialogs = true
+	if OS.has_feature("web"):
+		var url_app_name := Html5FileExchange.get_url_param("app_name")
+		if not url_app_name.is_empty():
+			custom_app_name = url_app_name
 	await get_tree().process_frame
 	project_switched.emit()
 	canvas.color_index.enabled = show_pixel_indices  # Initialize color index preview

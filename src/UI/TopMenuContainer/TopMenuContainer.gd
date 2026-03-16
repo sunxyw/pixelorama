@@ -632,7 +632,7 @@ func _setup_help_menu() -> void:
 		"Restore Backup": &"",
 		"Open Editor Data Folder": "open_editor_data_folder",
 		"Changelog": "changelog",
-		"About Pixelorama": "about_pixelorama",
+		"About " + Global.custom_app_name: "about_pixelorama",
 		"Support Pixelorama's Development": &"",
 	}
 	var i := 0

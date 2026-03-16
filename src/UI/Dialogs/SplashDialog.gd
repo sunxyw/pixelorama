@@ -59,7 +59,7 @@ func _process(_delta: float) -> void:
 func _on_SplashDialog_about_to_show() -> void:
 	if Global.config_cache.has_section_key("preferences", "startup"):
 		show_on_startup.button_pressed = not Global.config_cache.get_value("preferences", "startup")
-	title = "Pixelorama" + " " + Global.current_version
+	title = Global.custom_app_name + " " + Global.current_version
 
 	if not artworks.is_empty():
 		chosen_artwork = randi() % artworks.size()

@@ -201,7 +201,7 @@ func _init() -> void:
 func _ready() -> void:
 	get_tree().set_auto_accept_quit(false)
 
-	get_window().title = tr("untitled") + " - Pixelorama " + Global.current_version
+	get_window().title = tr("untitled") + " - " + Global.custom_app_name + " " + Global.current_version
 
 	Global.current_project.layers.append(PixelLayer.new(Global.current_project))
 	Global.current_project.frames.append(Global.current_project.new_empty_frame())
@@ -233,7 +233,42 @@ func _ready() -> void:
 		load_last_project()
 	_setup_application_window_size()
 	_show_splash_screen()
+	if OS.has_feature("web"):
+		await _load_web_draft()
 	Global.pixelorama_opened.emit()
+
+
+## Checks for a [code]load_draft_url[/code] URL query parameter and, if present,
+## fetches and opens the file (PXO project or image) from that URL.
+## This allows the embedding website to pre-load a draft into the editor on startup.
+func _load_web_draft() -> void:
+	var draft_url := Html5FileExchange.get_url_param("load_draft_url")
+	if draft_url.is_empty():
+		return
+	var data := await Html5FileExchange.load_draft_from_api(draft_url)
+	if data.is_empty():
+		Global.popup_error(tr("Failed to load draft from URL: %s") % draft_url)
+		return
+	var draft_filename := draft_url.get_file()
+	if draft_filename.is_empty():
+		draft_filename = "draft.pxo"
+	var ext := draft_filename.get_extension().to_lower()
+	if ext == "pxo":
+		var temp_path := "user://%s" % draft_filename
+		var temp_file := FileAccess.open(temp_path, FileAccess.WRITE)
+		if temp_file == null:
+			Global.popup_error(tr("Failed to write temporary draft file."))
+			return
+		temp_file.store_buffer(data)
+		temp_file.close()
+		OpenSave.open_pxo_file(temp_path)
+		DirAccess.remove_absolute(temp_path)
+	else:
+		var image := OpenSave.load_image_from_buffer(data)
+		if image.is_empty():
+			Global.popup_error(tr("Failed to decode draft image from URL: %s") % draft_url)
+			return
+		OpenSave.handle_loading_image(draft_filename, image)
 
 
 func _input(event: InputEvent) -> void:

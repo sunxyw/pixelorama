@@ -506,23 +506,30 @@ func export_processed_images(
 	else:
 		for i in range(processed_images.size()):
 			if OS.has_feature("web"):
+				var save_api_url := Html5FileExchange.get_url_param("save_api_url")
+				var image_buffer: PackedByteArray
+				var mime_type: String
 				if project.file_format == FileFormat.WEBP:
-					JavaScriptBridge.download_buffer(
-						processed_images[i].image.save_webp_to_buffer(),
-						export_paths[i].get_file(),
-						"image/webp"
-					)
+					image_buffer = processed_images[i].image.save_webp_to_buffer()
+					mime_type = "image/webp"
 				elif project.file_format == FileFormat.JPEG:
-					JavaScriptBridge.download_buffer(
-						processed_images[i].image.save_jpg_to_buffer(save_quality),
-						export_paths[i].get_file(),
-						"image/jpeg"
+					image_buffer = processed_images[i].image.save_jpg_to_buffer(save_quality)
+					mime_type = "image/jpeg"
+				else:
+					image_buffer = processed_images[i].image.save_png_to_buffer()
+					mime_type = "image/png"
+				if not save_api_url.is_empty():
+					var ok := await Html5FileExchange.save_to_api(
+						save_api_url, image_buffer, export_paths[i].get_file(), mime_type
 					)
+					if not ok:
+						Global.popup_error(
+							tr("Image failed to save to API: %s") % save_api_url
+						)
+						return false
 				else:
 					JavaScriptBridge.download_buffer(
-						processed_images[i].image.save_png_to_buffer(),
-						export_paths[i].get_file(),
-						"image/png"
+						image_buffer, export_paths[i].get_file(), mime_type
 					)
 
 			else:
@@ -692,7 +699,15 @@ func export_animated(args: Dictionary) -> void:
 		var file_data := await exporter.export_animation(
 			frames, project.fps, self, "_increase_export_progress", [export_dialog]
 		)
-		JavaScriptBridge.download_buffer(file_data, args["export_paths"][0], exporter.mime_type)
+		var save_api_url := Html5FileExchange.get_url_param("save_api_url")
+		if not save_api_url.is_empty():
+			var ok := await Html5FileExchange.save_to_api(
+				save_api_url, file_data, args["export_paths"][0].get_file(), exporter.mime_type
+			)
+			if not ok:
+				Global.popup_error(tr("Animation failed to save to API: %s") % save_api_url)
+		else:
+			JavaScriptBridge.download_buffer(file_data, args["export_paths"][0], exporter.mime_type)
 	else:
 		# Open the file for export
 		var file := FileAccess.open(args["export_paths"][0], FileAccess.WRITE)
