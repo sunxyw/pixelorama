@@ -83,6 +83,69 @@ func _define_js() -> void:
 			}
 		});
 	}
+
+	// Web API integration state
+	var pixeloramaApiSaveStatus = '';
+	var pixeloramaApiSaveError = '';
+	var pixeloramaDraftStatus = '';
+	var pixeloramaDraftData = null;
+	var pixeloramaDraftError = '';
+	var pixeloramaApiArgs = {};  // Temporary holder for API call arguments
+
+	// Returns the value of a URL query parameter, or null if not found.
+	function getUrlParam(name) {
+		return new URLSearchParams(window.location.search).get(name);
+	}
+
+	// Posts image data (base64-encoded) to a REST API endpoint via multipart/form-data.
+	// Sets pixeloramaApiSaveStatus to 'done' on success or 'error:<msg>' on failure.
+	async function saveImageToApi(apiUrl, b64Data, filename, mimeType) {
+		pixeloramaApiSaveStatus = 'pending';
+		pixeloramaApiSaveError = '';
+		try {
+			var binary = atob(b64Data);
+			var bytes = new Uint8Array(binary.length);
+			for (var i = 0; i < binary.length; i++) {
+				bytes[i] = binary.charCodeAt(i);
+			}
+			var blob = new Blob([bytes.buffer], {type: mimeType});
+			var formData = new FormData();
+			formData.append('file', blob, filename);
+			var response = await fetch(apiUrl, {method: 'POST', body: formData});
+			if (!response.ok) {
+				pixeloramaApiSaveError = 'HTTP ' + response.status;
+				pixeloramaApiSaveStatus = 'error';
+			} else {
+				pixeloramaApiSaveStatus = 'done';
+			}
+		} catch(e) {
+			pixeloramaApiSaveError = e.message;
+			pixeloramaApiSaveStatus = 'error';
+		}
+	}
+
+	// Fetches a draft (PXO or image) from the given URL.
+	// Sets pixeloramaDraftStatus to 'done' (with data in pixeloramaDraftData)
+	// or 'error:<msg>' on failure.
+	async function loadDraftFromApi(apiUrl) {
+		pixeloramaDraftStatus = 'pending';
+		pixeloramaDraftData = null;
+		pixeloramaDraftError = '';
+		try {
+			var response = await fetch(apiUrl);
+			if (!response.ok) {
+				pixeloramaDraftError = 'HTTP ' + response.status;
+				pixeloramaDraftStatus = 'error';
+			} else {
+				var buffer = await response.arrayBuffer();
+				pixeloramaDraftData = new Uint8Array(buffer);
+				pixeloramaDraftStatus = 'done';
+			}
+		} catch(e) {
+			pixeloramaDraftError = e.message;
+			pixeloramaDraftStatus = 'error';
+		}
+	}
 	""",
 			true
 		)
@@ -187,3 +250,81 @@ func load_shader() -> void:
 	var shader_effect_dialog = Global.control.get_node("Dialogs/ImageEffects/ShaderEffect")
 	if is_instance_valid(shader_effect_dialog):
 		shader_effect_dialog.change_shader(shader, file_name.get_basename())
+
+
+## Returns the value of a URL query parameter when running on the web,
+## or an empty string if not found or not on web.
+## This allows the embedding website to pass configuration to Pixelorama
+## via URL parameters (e.g. [code]?save_api_url=https://example.com/save[/code]).
+func get_url_param(param_name: String) -> String:
+	if not OS.has_feature("web"):
+		return ""
+	# Use URLSearchParams directly to avoid depending on _define_js() having been called.
+	# Use JSON.stringify to safely embed the param name into the JS code.
+	var result = JavaScriptBridge.eval(
+		"new URLSearchParams(window.location.search).get(%s);" % JSON.stringify(param_name), true
+	)
+	if result == null:
+		return ""
+	return str(result)
+
+
+## Posts binary [param buffer] data to [param api_url] using a multipart/form-data POST request.
+## The file field name in the form is [code]file[/code].
+## Returns [code]true[/code] on success, [code]false[/code] on failure.
+## Only works when running on the web.
+func save_to_api(
+	api_url: String, buffer: PackedByteArray, filename: String, mime_type: String
+) -> bool:
+	if not OS.has_feature("web"):
+		return false
+	var b64 := Marshalls.raw_to_base64(buffer)
+	# Set the URL, filename, and MIME type via JSON.stringify so special characters are
+	# properly escaped, preventing JS injection from user-controlled values.
+	JavaScriptBridge.eval(
+		(
+			"pixeloramaApiArgs = {url: %s, filename: %s, mime: %s};"
+			% [JSON.stringify(api_url), JSON.stringify(filename), JSON.stringify(mime_type)]
+		),
+		true
+	)
+	# base64 only contains A-Za-z0-9+/= which are safe inside a single-quoted JS string.
+	JavaScriptBridge.eval(
+		"saveImageToApi(pixeloramaApiArgs.url, '%s', pixeloramaApiArgs.filename, pixeloramaApiArgs.mime);"
+		% b64,
+		true
+	)
+	# Poll until the JS async operation completes
+	while true:
+		var status: String = str(JavaScriptBridge.eval("pixeloramaApiSaveStatus;", true))
+		if status == "done":
+			return true
+		if status == "error":
+			var err_msg: String = str(JavaScriptBridge.eval("pixeloramaApiSaveError;", true))
+			push_error("API save failed: %s" % err_msg)
+			return false
+		await get_tree().create_timer(0.2).timeout
+	return false  # Unreachable, satisfies GDScript return analysis
+
+
+## Fetches a draft file (PXO or image) from [param api_url] via an HTTP GET request
+## and returns the raw bytes.
+## Returns an empty [PackedByteArray] on failure.
+## Only works when running on the web.
+func load_draft_from_api(api_url: String) -> PackedByteArray:
+	if not OS.has_feature("web"):
+		return PackedByteArray()
+	# Use JSON.stringify to safely embed api_url into the JS call, preventing injection.
+	JavaScriptBridge.eval("loadDraftFromApi(%s);" % JSON.stringify(api_url), true)
+	# Poll until the JS async operation completes
+	while true:
+		var status: String = str(JavaScriptBridge.eval("pixeloramaDraftStatus;", true))
+		if status == "done":
+			var data: PackedByteArray = JavaScriptBridge.eval("pixeloramaDraftData;", true)
+			return data
+		if status == "error":
+			var err_msg: String = str(JavaScriptBridge.eval("pixeloramaDraftError;", true))
+			push_error("API draft load failed: %s" % err_msg)
+			return PackedByteArray()
+		await get_tree().create_timer(0.2).timeout
+	return PackedByteArray()  # Unreachable, satisfies GDScript return analysis
